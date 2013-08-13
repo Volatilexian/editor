@@ -1,15 +1,11 @@
 <RCC>
-    <qresource prefix="/file">
-        <file>images/new.png</file>
-        <file>images/open.png</file>
-        <file>images/save.png</file>
-    </qresource>
-    <qresource prefix="/edit">
-        <file>images/paste.png</file>
+    <qresource prefix="/">
         <file>images/copy.png</file>
         <file>images/cut.png</file>
-    </qresource>
-    <qresource prefix="/program">
         <file>images/icon.png</file>
+        <file>images/new.png</file>
+        <file>images/open.png</file>
+        <file>images/paste.png</file>
+        <file>images/save.png</file>
     </qresource>
 </RCC>
