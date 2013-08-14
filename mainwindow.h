@@ -10,6 +10,8 @@
 #include <QApplication>
 #include <QMdiArea>
 
+class Editor;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -20,6 +22,9 @@ public:
 
 private:
     QMdiArea *mdiArea;
+    QWidgetList windows;
+    QActionGroup *windowActionGroup;
+    QAction *separaAction;
 
     //2 tool bars
     QToolBar *fileTool;
@@ -55,28 +60,31 @@ private:
     void createActions();
     void createMenuBar();
     void createToolBar();
+    void createStatusBar();
+
+    void addEditor(Editor *editor);
+    Editor *activeEditor();
+
+protected:
+    void closeEvent(QCloseEvent *event);
+
+public slots:
+    void openFile(const QString &fileName);
 
 private slots:
     //mainwindow
     void updateActions();
+    void loadFiles();
 
     //file menu
     void newFile();
-    void openFile();
+    void open();
     void saveFile();
     void saveAS();
-    void exitProgram();
     //edit menu
     void cut();
     void copy();
     void paste();
-    //window menu
-    void closeFile();
-    void closeAll();
-    void tile();
-    void cascade();
-    void nextFile();
-    void previousFile();
     //help menu
     void aboutProgram();
 

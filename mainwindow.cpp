@@ -1,23 +1,86 @@
+#include <QTimer>
+#include <QApplication>
+#include <QCloseEvent>
+#include <QStatusBar>
+#include <QMdiSubWindow>
+#include <QLabel>
+
 #include "mainwindow.h"
+#include "editor.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowIcon(QIcon(":/images/icon.png"));
-    setWindowTitle(tr("MDI editor"));
-    createActions();
-    createMenuBar();
-    createToolBar();
-
     mdiArea = new QMdiArea;
     setCentralWidget(mdiArea);
     connect(mdiArea, SIGNAL(subWindowActivated(QMdiSubWindow*)), this, SLOT(updateActions()));//update the actions to the activated open file
 
+    createActions();
+    createMenuBar();
+    createToolBar();
+
+    setWindowIcon(QIcon(":/images/icon.png"));
+    setWindowTitle(tr("MDI editor"));
+    QTimer::singleShot(0, this, SLOT(loadFiles()));
+}
+
+void MainWindow::updateActions()
+{
+    bool hasEditor = (activeEditor() != 0);
+    bool hasSelection = activeEditor() && activeEditor()->textCursor().hasSelection();
+
+    saveAction->setEnabled(hasEditor);
+    saveAsAction->setEnabled(hasEditor);
+    cutAction->setEnabled(hasSelection);
+    copyAction->setEnabled(hasSelection);
+    pasteAction->setEnabled(hasEditor);
+    closeAction->setEnabled(hasEditor);
+    closeAllAction->setEnabled(hasEditor);
+    tileAction->setEnabled(hasEditor);
+    cascadeAction->setEnabled(hasEditor);
+    nextAction->setEnabled(hasEditor);
+    previousAction->setEnabled(hasEditor);
+    separaAction->setEnabled(hasEditor);
+
+    if(activeEditor())
+        activeEditor()->windowMenuAction()->setChecked(true);
 }
 
 MainWindow::~MainWindow()
 {
     
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    mdiArea->closeAllSubWindows();
+    if(!mdiArea->subWindowList().isEmpty())
+        event->ignore();
+    else
+        event->accept();
+}
+
+void MainWindow::loadFiles()
+{
+    QStringList args = QApplication::arguments();
+    args.removeFirst();
+    if(!args.isEmpty())
+    {
+        foreach (QString arg, args)
+            openFile(arg);
+        mdiArea->cascadeSubWindows();
+    }
+    else
+        newFile();
+
+    mdiArea->activateNextSubWindow();
+}
+
+void MainWindow::openFile(const QString &fileName)
+{
+    Editor *editor = Editor::openFile(fileName, this);
+    if(editor)
+        addEditor(editor);
 }
 
 void MainWindow::createMenuBar()
@@ -48,6 +111,8 @@ void MainWindow::createMenuBar()
     windowMenu->addAction(nextAction);
     windowMenu->addAction(previousAction);
 
+    menuBar()->addSeparator();
+
     //help menu
     helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(aboutAction);
@@ -69,6 +134,12 @@ void MainWindow::createToolBar()
     editTool->addAction(pasteAction);
 }
 
+void MainWindow::createStatusBar()
+{
+    QLabel *readyLabel = new QLabel(tr(" Ready"));
+    statusBar()->addWidget(readyLabel, 1);
+}
+
 void MainWindow::createActions()
 {
     //file menu
@@ -77,7 +148,7 @@ void MainWindow::createActions()
     connect(newAction, SIGNAL(triggered()), this, SLOT(newFile()));
     openAction = new QAction(QIcon(":/images/open.png"), tr("&Open"), this);
     openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, SIGNAL(triggered()), this, SLOT(openFile()));
+    connect(openAction, SIGNAL(triggered()), this, SLOT(open()));
     saveAction = new QAction(QIcon(":/images/save.png"), tr("&Save"), this);
     saveAction->setShortcut(QKeySequence::Save);
     connect(saveAction, SIGNAL(triggered()), this, SLOT(saveFile()));
@@ -85,7 +156,7 @@ void MainWindow::createActions()
     connect(saveAsAction, SIGNAL(triggered()), this, SLOT(saveAS()));
     exitAction = new QAction(tr("E&xit"), this);
     exitAction->setShortcut(tr("Ctrl+Q"));
-    connect(exitAction, SIGNAL(triggered()), this, SLOT(exitProgram()));
+    connect(exitAction, SIGNAL(triggered()), this, SLOT(close()));
 
     //edit menu
     cutAction = new QAction(QIcon(":/images/cut.png"), tr("Cu&t"), this);
@@ -101,101 +172,94 @@ void MainWindow::createActions()
     //window menu
     closeAction = new QAction(tr("Cl&ose"), this);
     closeAction->setShortcut(QKeySequence::Close);
-    connect(closeAction, SIGNAL(triggered()), this, SLOT(closeFile()));
+    connect(closeAction, SIGNAL(triggered()), mdiArea, SLOT(closeActiveSubWindow()));
     closeAllAction = new QAction(tr("Close &All"), this);
-    connect(closeAllAction, SIGNAL(triggered()), this, SLOT(closeAll()));
+    connect(closeAllAction, SIGNAL(triggered()), this, SLOT(close()));
     tileAction = new QAction(tr("&Tile"), this);
-    connect(tileAction, SIGNAL(triggered()), this, SLOT(tile()));
+    connect(tileAction, SIGNAL(triggered()), mdiArea, SLOT(tileSubWindows()));
     cascadeAction = new QAction(tr("&Cascade"), this);
-    connect(cascadeAction, SIGNAL(triggered()), this, SLOT(cascade()));
+    connect(cascadeAction, SIGNAL(triggered()), mdiArea, SLOT(cascadeSubWindows()));
     nextAction = new QAction(tr("Ne&xt"), this);
     nextAction->setShortcut(QKeySequence::NextChild);
-    connect(nextAction, SIGNAL(triggered()), this, SLOT(nextFile()));
+    connect(nextAction, SIGNAL(triggered()), mdiArea, SLOT(activateNextSubWindow()));
     previousAction = new QAction(tr("Pre&vious"), this);
     previousAction->setShortcut(QKeySequence::PreviousChild);
-    connect(previousAction, SIGNAL(triggered()), this, SLOT(previousFile()));
+    connect(previousAction, SIGNAL(triggered()), mdiArea, SLOT(activatePreviousSubWindow()));
+
+    separaAction = new QAction(this);
+    separaAction->setSeparator(true);
 
     //help menu
     aboutAction = new QAction(tr("&About"), this);
     connect(aboutAction, SIGNAL(triggered()), this, SLOT(aboutProgram()));
     aboutQtAction = new QAction(tr("About &Qt"), this);
     connect(aboutQtAction, SIGNAL(triggered()), qApp, SLOT(aboutQt()));
+
+    windowActionGroup = new QActionGroup(this);
 }
 
-void MainWindow::updateActions()
+void MainWindow::addEditor(Editor *editor)
 {
+    connect(editor, SIGNAL(copyAvailable(bool)), cutAction, SLOT(setEnabled(bool)));
+    connect(editor, SIGNAL(copyAvailable(bool)), copyAction, SLOT(setEnabled(bool)));
 
+    QMdiSubWindow *subWindow = mdiArea->addSubWindow(editor);
+    windowMenu->addAction(editor->windowMenuAction());
+    windowActionGroup->addAction(editor->windowMenuAction());
+    subWindow->show();
+}
+
+Editor *MainWindow::activeEditor()
+{
+    QMdiSubWindow *subWindow = mdiArea->activeSubWindow();
+    if(subWindow)
+        return qobject_cast<Editor *>(subWindow->widget());
+    return 0;
 }
 
 //the following functions are the slot of the actions
 void MainWindow::newFile()
 {
-
+    Editor *editor = new Editor;
+    editor->newFile();
+    addEditor(editor);
 }
 
-void MainWindow::openFile()
+void MainWindow::open()
 {
-
+    Editor *editor = Editor::open(this);
+    if(editor)
+        addEditor(editor);
 }
 
 void MainWindow::saveFile()
 {
-
+    if(activeEditor())
+        activeEditor()->save();
 }
 
 void MainWindow::saveAS()
 {
-
-}
-
-void MainWindow::exitProgram()
-{
-
+    if(activeEditor())
+        activeEditor()->saveAs();
 }
 
 void MainWindow::cut()
 {
-
+    if(activeEditor())
+        activeEditor()->cut();
 }
 
 void MainWindow::copy()
 {
-
+    if(activeEditor())
+        activeEditor()->copy();
 }
 
 void MainWindow::paste()
 {
-
-}
-
-void MainWindow::closeFile()
-{
-
-}
-
-void MainWindow::closeAll()
-{
-
-}
-
-void MainWindow::tile()
-{
-
-}
-
-void MainWindow::cascade()
-{
-
-}
-
-void MainWindow::nextFile()
-{
-
-}
-
-void MainWindow::previousFile()
-{
-
+    if(activeEditor())
+        activeEditor()->paste();
 }
 
 void MainWindow::aboutProgram()
